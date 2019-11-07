@@ -1,4 +1,4 @@
-# nn-consistency
+# Convergence Analysis of Neural Networks
 This code can be used to reproduce figures from my master's thesis "Convergence Analysis of Neural Networks". It is licensed under the Apache 2.0 license.
 It mainly requires numpy, scipy and matplotlib although one of the plots can be compared against a (slower) keras implementation.
 The functionality is distributed as follows:
