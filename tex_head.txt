@@ -1,0 +1,168 @@
+\documentclass[tikz,border=0.1cm]{standalone}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[ngerman]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{microtype}
+\usepackage{amsopn}
+\usepackage{varwidth} 
+\usepackage{xcolor,colortbl}
+\usepackage{tabu}
+\usepackage{comment}
+\usepackage{enumerate}
+\usepackage{array}
+\usepackage{csquotes}
+\usepackage{tikz}
+\usepackage{tikz-qtree}
+\usepackage{tikz-3dplot}
+\usepackage{nicefrac}
+\usetikzlibrary{trees,positioning,shapes,calc,patterns,angles,quotes}
+%\usepackage[squaren]{SIunits}
+\usepackage{pgfplots}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+%\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{color}
+\usepackage{stmaryrd}
+\usepackage[shortlabels]{enumitem}
+\usepackage{mathdots}
+\usepackage{empheq}
+\usepgfplotslibrary{fillbetween}
+
+\pgfplotsset{compat=1.11}
+\usepackage[caption=false]{subfig}
+
+\usepackage{etoolbox}
+
+\makeatletter
+\providerobustcmd*{\bigcupdot}{%
+  \mathop{%
+    \mathpalette\bigop@dot\bigcup
+  }%
+}
+\newrobustcmd*{\bigop@dot}[2]{%
+  \setbox0=\hbox{$\m@th#1#2$}%
+  \vbox{%
+    \lineskiplimit=\maxdimen
+    \lineskip=-0.7\dimexpr\ht0+\dp0\relax
+    \ialign{%
+      \hfil##\hfil\cr
+      $\m@th\cdot$\cr
+      \box0\cr
+    }%
+  }%
+}
+\makeatother
+
+\newcommand*\widefbox[1]{\fbox{\hspace{2em}#1\hspace{2em}}}
+
+\newlength\Origarrayrulewidth
+
+% horizontal rule equivalent to \cline but with 2pt width
+\newcommand{\Cline}[1]{%
+ \noalign{\global\setlength\Origarrayrulewidth{\arrayrulewidth}}%
+ \noalign{\global\setlength\arrayrulewidth{2pt}}\cline{#1}%
+ \noalign{\global\setlength\arrayrulewidth{\Origarrayrulewidth}}%
+}
+
+% draw a vertical rule of width 2pt on both sides of a cell
+\newcommand\Thickvrule[1]{%
+  \multicolumn{1}{!{\vrule width 2pt}c!{\vrule width 2pt}}{#1}%
+}
+
+% draw a vertical rule of width 2pt on the left side of a cell
+\newcommand\Thickvrulel[1]{%
+  \multicolumn{1}{!{\vrule width 2pt}c|}{#1}%
+}
+
+% draw a vertical rule of width 2pt on the right side of a cell
+\newcommand\Thickvruler[1]{%
+  \multicolumn{1}{|c!{\vrule width 2pt}}{#1}%
+}
+
+\newcommand{\bbA}{\mathbb{A}}
+\newcommand{\bbB}{\mathbb{B}}
+\newcommand{\bbC}{\mathbb{C}}
+\newcommand{\bbD}{\mathbb{D}}
+\newcommand{\bbE}{\mathbb{E}}
+\newcommand{\bbF}{\mathbb{F}}
+\newcommand{\bbG}{\mathbb{G}}
+\newcommand{\bbH}{\mathbb{H}}
+\newcommand{\bbI}{\mathbb{I}}
+\newcommand{\bbJ}{\mathbb{J}}
+\newcommand{\bbK}{\mathbb{K}}
+\newcommand{\bbL}{\mathbb{L}}
+\newcommand{\bbM}{\mathbb{M}}
+\newcommand{\bbN}{\mathbb{N}}
+\newcommand{\bbO}{\mathbb{O}}
+\newcommand{\bbP}{\mathbb{P}}
+\newcommand{\bbQ}{\mathbb{Q}}
+\newcommand{\bbR}{\mathbb{R}}
+\newcommand{\bbS}{\mathbb{S}}
+\newcommand{\bbT}{\mathbb{T}}
+\newcommand{\bbU}{\mathbb{U}}
+\newcommand{\bbV}{\mathbb{V}}
+\newcommand{\bbW}{\mathbb{W}}
+\newcommand{\bbX}{\mathbb{X}}
+\newcommand{\bbY}{\mathbb{Y}}
+\newcommand{\bbZ}{\mathbb{Z}}
+
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\calB}{\mathcal{B}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calD}{\mathcal{D}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calG}{\mathcal{G}}
+\newcommand{\calH}{\mathcal{H}}
+\newcommand{\calI}{\mathcal{I}}
+\newcommand{\calJ}{\mathcal{J}}
+\newcommand{\calK}{\mathcal{K}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calN}{\mathcal{N}}
+\newcommand{\calO}{\mathcal{O}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calQ}{\mathcal{Q}}
+\newcommand{\calR}{\mathcal{R}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calT}{\mathcal{T}}
+\newcommand{\calU}{\mathcal{U}}
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calW}{\mathcal{W}}
+\newcommand{\calX}{\mathcal{X}}
+\newcommand{\calY}{\mathcal{Y}}
+\newcommand{\calZ}{\mathcal{Z}}
+
+%Operators for Relations
+\newcommand{\equalDef}{\coloneqq}
+\newcommand{\defEqual}{\eqqcolon}
+\newcommand{\equivDef}{:\Leftrightarrow}
+
+\newcommand{\mybracketl}[1]{[}
+\newcommand{\mybracketr}[1]{]}
+
+\pgfplotscreateplotcyclelist{custom black white}{%
+solid, every mark/.append style={solid, fill=gray}, mark=*\\%
+dotted, every mark/.append style={solid, fill=gray}, mark=square*\\%
+densely dotted, every mark/.append style={solid, fill=gray}, mark=triangle*\\%
+dashdotted, every mark/.append style={solid, fill=gray}, mark=star\\%
+dashed, every mark/.append style={solid, fill=gray},mark=diamond*\\%
+loosely dashed, every mark/.append style={solid, fill=gray},mark=*\\%
+densely dashed, every mark/.append style={solid, fill=gray},mark=square*\\%
+dashdotted, every mark/.append style={solid, fill=gray},mark=otimes*\\%
+dashdotdotted, every mark/.append style={solid},mark=star\\%
+densely dashdotted,every mark/.append style={solid, fill=gray},mark=diamond*\\%
+}
+
+\begin{document}
+
+\begin{tikzpicture}
+\begin{loglogaxis}[xmin = , xmax = , ymin = , ymax = , xlabel = $n$ (Number of hidden neurons), ylabel = Estimated probability of a kink crossing a datapoint, legend pos = south west, width = 14cm, height = 10cm, cycle list name = custom black white, grid=major]

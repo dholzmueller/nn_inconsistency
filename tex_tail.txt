@@ -1,0 +1,8 @@
+
+\addplot[domain=16:2048] {2/sqrt(x)};
+\addlegendentry{$y = 2x^{-1/2}$}
+\end{loglogaxis}
+\end{tikzpicture}
+
+\end{document}
+
