@@ -79,7 +79,10 @@ def get_statistics_dicts(data_list_dict, from_keras=False):
 
 # prints a summary for each number of hidden neurons
 def print_statistics(statistics_dicts):
-    for offset_str, statistics_dict in statistics_dicts.items():
+    offset_strs = list(statistics_dicts.keys())
+    offset_strs.sort()
+    for offset_str in offset_strs:
+        statistics_dict = statistics_dicts[offset_str]
         print('Results for offset {}:'.format(offset_str))
         keys = statistics_dict.keys()
 
@@ -94,14 +97,19 @@ def print_statistics(statistics_dicts):
 # creates a LaTeX plot of the kink crossing probabilities
 def plot_statistics(statistics_dicts, out_filename):
     tex_str = ''
-    for offset_str, statistics_dict in statistics_dicts.items():
-
+    offset_strs = list(statistics_dicts.keys())
+    offset_strs.sort()
+    for offset_str in offset_strs:
+        statistics_dict = statistics_dicts[offset_str]
         keys = statistics_dict.keys()
 
         # all but locally converged (2) and early stopped (5) count as possibly crossed
         lines = ['({}, {})'.format(n_hidden, 1.0 - ((statistics_dict[n_hidden][2] + statistics_dict[n_hidden][5]) / np.sum(statistics_dict[n_hidden])))
                  for n_hidden in np.sort(np.array(list(keys)))]
         tex_str += '\\addplot coordinates {\n' + '\n'.join(lines) + '};\n\\addlegendentry{$\\Delta = ' + offset_str + '$}\n'
+
+    print('LaTeX code excerpt:')
+    print(tex_str)
 
     tex_str = utils.readFromFile('tex_head.txt') + tex_str + utils.readFromFile('tex_tail.txt')
     utils.writeToFile(out_filename, tex_str)

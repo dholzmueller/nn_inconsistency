@@ -57,7 +57,7 @@ def getSubfolderNames(folder):
         if os.path.isdir(os.path.join(folder, name))]
 
 def getSubfolders(folder):
-    return [os.path.join(folder, name) + '/'
+    return [os.path.join(folder, name)
     for name in os.listdir(folder)
         if os.path.isdir(os.path.join(folder, name))]
 

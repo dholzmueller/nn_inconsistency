@@ -107,8 +107,6 @@ class SufficientStoppingCriterion(object):
             np.count_nonzero(net.x_weights[net.orig_indices, :][:, net.x > 0], axis=1) <= 1,
             np.count_nonzero(net.x_weights[net.orig_indices, :][:, net.x < 0], axis=1) <= 1)
 
-        crossed_point_indices = net.max_kink_movement[net.orig_indices] >= net.min_abs_x
-
         net.terminate_instances(vars, [locally_converged_indices, a_degenerate_indices,
                                        x_degenerate_indices],
                                 [TrainingStatus.LOCALLY_CONVERGED, TrainingStatus.A_DEGENERATE,

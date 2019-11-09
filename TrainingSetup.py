@@ -163,39 +163,42 @@ class TrainingSetup(object):
 
         S_bound, S_psi_bound = self.compute_sum_bounds(Aref, lr, psi_0)
 
-        #print('norm of psi_0:', np.linalg.norm(psi_0), ', S_psi_bound:', S_psi_bound, 'eig_Aref:', np.linalg.eigh(Aref)[0])
-        #print('u_hat:', uhat)
+        # print('norm of psi_0:', np.linalg.norm(psi_0), ', S_psi_bound:', S_psi_bound, 'eig_Aref:', np.linalg.eigh(Aref)[0])
+        # print('u_hat:', uhat)
 
         if S_bound == np.inf:
-            #print('infty')
+            # print('infty')
             return False
 
         norm_B_infty = 1 + np.abs(self.alpha)
         norm_sqrtM_infty = np.linalg.norm(self.sqrtM, np.inf)
         kappa_uk_bound = 2 * norm_B_infty * norm_sqrtM_infty * S_psi_bound
 
-        #print('kappa_uk_bound:', kappa_uk_bound)
+        # print('kappa_uk_bound:', kappa_uk_bound)
         if kappa_uk_bound >= 0.5:
             # don't even try because it probably won't work
             # (new_delta is typically >> kappa_uk_bound and must be <= 0.5)
             return False
 
         # difference bounds for Sigma entries according to Proposition 5.31
-        difference_bounds = [kappa_uk_bound * (self.Qtilde * Sigma[sign] + Sigma[sign] * self.Qtilde)
-                             + 8 * kappa_uk_bound**2 * np.exp(4 * kappa_uk_bound) * np.linalg.norm(Sigma[sign], np.inf)
-                                for sign in [0, 1]]
+        difference_bounds = [kappa_uk_bound * (self.Qtilde * np.abs(Sigma[sign]) + np.abs(Sigma[sign]) * self.Qtilde)
+                             + 8 * kappa_uk_bound ** 2 * np.exp(4 * kappa_uk_bound) * np.linalg.norm(Sigma[sign],
+                                                                                                     np.inf)
+                             for sign in [0, 1]]
         # compute difference bounds for G matrices and then for A as in the proof of Proposition 5.33
         Gw_diff_bound = np.max([difference_bounds[sign][w_, w_] for sign in [0, 1]])
-        Gab_diff_bound = np.max([difference_bounds[sign][a_, a_] + difference_bounds[sign][a_, b_] + difference_bounds[sign][b_, b_] for sign in [0, 1]])
+        Gab_diff_bound = np.max(
+            [difference_bounds[sign][a_, a_] + difference_bounds[sign][a_, b_] + difference_bounds[sign][b_, b_] for
+             sign in [0, 1]])
         Gwab_bound = kappa_uk_bound * np.max([np.abs(Sigma[sign][w_, a_]) + np.abs(Sigma[sign][w_, b_])
                                               + difference_bounds[sign][w_, a_] + difference_bounds[sign][w_, b_]
                                               for sign in [0, 1]])
-        A_diff_bound = norm_B_infty**2 * (Gw_diff_bound + Gab_diff_bound + Gwab_bound)
+        A_diff_bound = norm_B_infty ** 2 * (Gw_diff_bound + Gab_diff_bound + Gwab_bound)
 
         # new bound for delta as in the proof Proposition 5.33
-        new_delta = S_bound * norm_sqrtM_infty ** 2 * A_diff_bound
+        new_delta = S_bound * (norm_sqrtM_infty ** 2) * A_diff_bound
 
-        #print('new_delta: {}'.format(new_delta))
+        # print('new_delta: {}'.format(new_delta))
 
         if new_delta > 0.5:
             # cannot use induction argument to bound kappa_uk using S_psi
@@ -206,18 +209,19 @@ class TrainingSetup(object):
         # print('kappa_uk_bound:', kappa_uk_bound)
         for sign in [0, 1]:
             theta_vectors = np.asmatrix(np.vstack([a[a_indices[sign]], b[a_indices[sign]], w[a_indices[sign]]]))
-            #print('theta_vectors:', theta_vectors)
-            #print('first product:', kappa_uk_bound * self.Qtilde * theta_vectors)
-            #print('second product:', 2 * kappa_uk_bound ** 2 * np.exp(2 * kappa_uk_bound) * np.expand_dims(np.max(np.abs(theta_vectors), axis=0), axis=0))
-            #print('maxabs:', np.max(np.abs(theta_vectors), axis=0))
+            # print('theta_vectors:', theta_vectors)
+            # print('first product:', kappa_uk_bound * self.Qtilde * theta_vectors)
+            # print('second product:', 2 * kappa_uk_bound ** 2 * np.exp(2 * kappa_uk_bound) * np.expand_dims(np.max(np.abs(theta_vectors), axis=0), axis=0))
+            # print('maxabs:', np.max(np.abs(theta_vectors), axis=0))
 
             # compute difference bounds for the theta vectors according to Proposition 5.31
-            difference_bounds = kappa_uk_bound * self.Qtilde * theta_vectors \
-                                + 2 * kappa_uk_bound ** 2 * np.exp(2 * kappa_uk_bound) \
-                                  * np.max(np.abs(theta_vectors), axis=0)  # somehow max keeps the first dimension here
+            difference_bounds = kappa_uk_bound * self.Qtilde * np.abs(theta_vectors) \
+                                + 2 * (kappa_uk_bound ** 2) * np.exp(2 * kappa_uk_bound) \
+                                * np.max(np.abs(theta_vectors), axis=0)  # somehow max keeps the first dimension here
 
             # check if the bounds allow for any kink to cross a datapoint
-            if np.any(np.abs(theta_vectors[a_, :]) - difference_bounds[a_, :] <= np.abs(theta_vectors[b_, :]) + difference_bounds[b_, :]):
+            if np.any(np.abs(theta_vectors[a_, :]) - difference_bounds[a_, :] <= np.abs(
+                    theta_vectors[b_, :]) + difference_bounds[b_, :]):
                 return False
 
         return True
