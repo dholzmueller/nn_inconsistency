@@ -495,7 +495,7 @@ def execute_mc(offset_str, base_dir='./mc-data/', use_sgd=False, use_early_stopp
 if __name__ == '__main__':
     # always add a / at the end of all directories
     # (code is intended for linux use, otherwise you need to convert / to \\)
-    base_dir = './mc_data/'
+    base_dir = './mc-data/'
     use_sgd = False  # whether sgd or gd should be used
     use_early_stopping = False  # should be used for sgd since sufficient stopping is not constructed for sgd
     # the sufficient stopping criterion only works provably for (non-stochastic) gradient descent

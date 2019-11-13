@@ -24,6 +24,7 @@
 */.fuse_hidden*
 .settings
 .idea
+__pycache__
 
 
 
