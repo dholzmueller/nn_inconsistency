@@ -68,7 +68,7 @@ def plot_loss():
     linewidth = 0.5
     plt.plot(x, y, 'k.')
     plt.plot(x_eval[0], y_eval[0], 'k--', linewidth=linewidth, label='Initial')
-    plt.plot(x_eval[10], y_eval[10], '#666666', linewidth=linewidth, label='1000 Epochs')
+    plt.plot(x_eval[10], y_eval[10], '#AAAAAA', linewidth=linewidth, label='1000 Epochs')
     plt.plot(x_eval[n_steps-1], y_eval[n_steps-1], 'k', linewidth=linewidth, label='20000 Epochs')
     plt.scatter(x_eval[n_steps-1][1:-1], y_eval[n_steps-1][1:-1], s=1)
     plt.xlabel(r'$x$')
