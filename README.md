@@ -12,7 +12,7 @@ If the keras code (slower, only for comparison of one specific experiment) shoul
 
 We have tested the dependencies in `requirements.txt` on Python 3.7.3. They can be installed using `pip3 install requirements.txt`. If you want to use the newest versions of the libraries, you can use
 ```
-pip3 install numpy scipy matplotlib torch keras==2.3.1 tensorflow==1.15.0 protobuf==3.20.0 imageio fire
+pip3 install numpy scipy matplotlib torch keras==2.3.1 tensorflow==1.15.5 protobuf==3.20.0 imageio fire
 ```
 It might be helpful to use `pip3 install --upgrade pip` and `pip3 install wheel` before.
 

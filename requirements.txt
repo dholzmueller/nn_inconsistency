@@ -6,7 +6,7 @@ fonttools==4.33.3
 gast==0.2.2
 google-pasta==0.2.0
 grpcio==1.46.3
-h5py==3.7.0
+h5py==2.10.0
 imageio==2.19.3
 importlib-metadata==4.11.4
 Keras==2.3.1
@@ -15,7 +15,7 @@ Keras-Preprocessing==1.1.2
 kiwisolver==1.4.2
 Markdown==3.3.7
 matplotlib==3.5.2
-numpy==1.21.6
+numpy==1.18.5
 opt-einsum==3.3.0
 packaging==21.3
 Pillow==9.1.1
@@ -27,7 +27,7 @@ PyYAML==6.0
 scipy==1.7.3
 six==1.16.0
 tensorboard==1.15.0
-tensorflow==1.15.0
+tensorflow==1.15.5
 tensorflow-estimator==1.15.1
 termcolor==1.1.0
 torch==1.11.0
