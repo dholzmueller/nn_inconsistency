@@ -72,12 +72,6 @@ def pretty_table_str(str_table):
     return whole_str[:-1]  # remove last newline
 
 
-# todo:
-# latex table
-# various plots vs dimension
-# "typical result plot for example distribution"
-# kink distribution plot
-
 def argsort(lst):
     # from https://stackoverflow.com/questions/3382352/equivalent-of-numpy-argsort-in-basic-python
     return sorted(range(len(lst)), key=lst.__getitem__)
