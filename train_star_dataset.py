@@ -17,8 +17,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import fire
 from pathlib import Path
 import datetime
+import custom_paths
 
 import utils
 
@@ -43,6 +45,19 @@ class ParallelLinear(nn.Module):
         if self.act:
             x = self.act(x)
         return x
+
+
+def get_standard_model(n_in, n_parallel, hidden_sizes, random_bias=False, act='relu'):
+    act_func = None
+    if act == 'tanh':
+        act_func = F.tanh
+    elif act == 'relu':
+        act_func = F.relu
+    sizes = [n_in] + hidden_sizes + [1]
+    layers = [ParallelLinear(n_parallel, in_features, out_features, act=act_func, random_bias=random_bias)
+              for in_features, out_features in zip(sizes[:-1], sizes[1:])]
+    layers[-1].act = None
+    return nn.Sequential(*layers)
 
 
 def get_standard_layers(n_in, n_parallel, hidden_sizes, device, random_bias=False, act='relu'):
@@ -113,6 +128,28 @@ def get_lin_lrs(model, x, y):
     return lrs
 
 
+def compute_min_linearized_predictions(x: torch.Tensor, y: torch.Tensor):
+    x_norms = x.norm(dim=1)
+    x_normalized = x / x_norms[:, None]
+    done = []
+    y_pred = y.clone()
+    for i in range(x.shape[0]):
+        if i in done:
+            continue
+        new_group = []
+        for j in range(x.shape[0]):
+            if (x_normalized[i] - x_normalized[j]).norm().item() < 1e-5:
+                new_group.append(j)
+        done += new_group
+        if len(new_group) <= 2:
+            continue  # can be perfectly fitted using an affine function
+        idxs = torch.LongTensor(new_group, device=x.device)
+        X = torch.stack([x_norms[idxs], torch.ones_like(x_norms[idxs])], dim=1)
+        sol, qr = y[idxs, None].lstsq(X)
+        y_pred[idxs] = X.matmul(sol[:2, 0])
+    return y_pred
+
+
 def compute_min_linearized_prediction_errors(x: torch.Tensor, y: torch.Tensor, sample_weights: torch.Tensor):
     x_norms = x.norm(dim=1)
     x_normalized = x / x_norms[:, None]
@@ -151,8 +188,8 @@ class ModelTrainer:
         self.layers = get_standard_layers(x_train.shape[1], n_parallel, hidden_sizes, self.device,
                                           random_bias=random_bias, act=act)
         self.model = nn.Sequential(*self.layers)
-        x_train = torch.as_tensor(x_train).to(self.device)
-        y_train = torch.as_tensor(y_train).to(self.device)
+        x_train = torch.as_tensor(x_train).to(self.device).float()
+        y_train = torch.as_tensor(y_train).to(self.device).float()
         self.x = x_train[None].repeat(n_parallel, 1, 1)
         self.y = y_train[None].repeat(n_parallel, 1)
         self.n_parallel = n_parallel
@@ -229,13 +266,17 @@ class ModelTrainer:
 
             y_pred = self.layers[-1](val).squeeze(2)
             mses = 0.5 * ((y_pred - self.y) ** 2 * self.sample_weights).sum(dim=1)
+            # todo: periodically save y_pred (but detach it to avoid memory overflow)
+            # todo: track when which NN crosses the threshold
+            # todo: also track when a kink reaches a data point for which NN
 
             self.mse_first_crossed[(self.mse_first_crossed == -1) & (mses < self.thresholds)] = self.epoch_count
 
             if self.epoch_count % 1000 == 0:
+                # todo print mean and quantiles
                 print('Epoch', i)
                 print(f'MMSE: {mses.mean().item():g}')
-                sorted_mses, _ = (mses/self.lin_thresholds).sort()
+                sorted_mses, _ = (mses/self.lin_thresholds).sort()  # todo this requires the thresholds not to be zero
                 quantiles = [sorted_mses[int(i * (self.n_parallel - 1) / 10)].item() for i in range(11)]
                 quantile_strings = [f'{q:g}' for q in quantiles]
                 quantiles_str = '[' + ', '.join(quantile_strings) + ']'
@@ -253,6 +294,35 @@ class ModelTrainer:
             self.epoch_count += 1
 
 
+def get_cross_dataset():
+    x_train = torch.tensor([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
+    y_train = torch.tensor([-1.0, 2.0, -1.0, 1.0, -2.0, 1.0])
+    x1 = torch.stack([torch.zeros_like(x_train), x_train], dim=1)
+    x2 = torch.stack([x_train, torch.zeros_like(x_train)], dim=1)
+    x_train = torch.cat([x1, x2], dim=0)
+    y_train = torch.cat([y_train, y_train], dim=0)
+    #print(x_train)
+    #print(y_train)
+    return x_train, y_train
+
+def get_double_cross_dataset():
+    x_train = torch.tensor([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
+    y_train = torch.tensor([-1.0, 2.0, -1.0, 1.0, -2.0, 1.0])
+    x1 = torch.stack([torch.zeros_like(x_train), x_train], dim=1)
+    x2 = torch.stack([x_train, torch.zeros_like(x_train)], dim=1)
+    x3 = torch.stack([x_train, x_train], dim=1)
+    x4 = torch.stack([x_train, -x_train], dim=1)
+    x_train = torch.cat([x1, x2, x3, x4], dim=0)
+    y_train = y_train.repeat(4)
+    #print(x_train)
+    #print(y_train)
+    return x_train, y_train
+
+def get_standard_dataset():
+    x_train = torch.tensor([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])[:, None]
+    y_train = torch.tensor([-1.0, 2.0, -1.0, 1.0, -2.0, 1.0])
+    return x_train, y_train
+
 def get_2d_star_dataset(k=11, dist=0.5):
     x_train = torch.tensor([1.0-dist, 1.0, 1.0+dist])[:, None]
     y_train = torch.tensor([1.0, -2.0, 1.0])
@@ -261,17 +331,71 @@ def get_2d_star_dataset(k=11, dist=0.5):
     y_train = y_train.repeat(k)
     return x_train, y_train
 
+def get_random_with_line_ds():
+    torch.manual_seed(1)
+    x_train = torch.tensor([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
+    y_train = torch.tensor([-1.0, 2.0, -1.0, 1.0, -2.0, 1.0])
+    x_train = torch.stack([torch.zeros_like(x_train), x_train], dim=1)
+    x_train = torch.cat([x_train, torch.randn_like(x_train)], dim=0)
+    y_train = torch.cat([y_train, torch.randn_like(y_train)], dim=0)
+    #import matplotlib.pyplot as plt
+    #plt.plot(x_train[:, 0].numpy(), x_train[:, 1].numpy(), '.')
+    #plt.show()
+    #print(x_train)
+    #print(y_train)
+    return x_train, y_train
 
-def run_training(n_hidden=256, ds_type='2d_star_11', n_parallel=1000, n_epochs=1000000,
-                 random_bias=False, act='relu', n_layers=1, device_number=0, version=0):
+
+def get_multi_axis_ds(d=5):
+    torch.manual_seed(1)
+    np.random.seed(1)
+    n_points_per_dim = 5
+    x_train = torch.zeros(size=(d*n_points_per_dim, d))
+    y_train = torch.zeros(size=(d*n_points_per_dim,))
+
+    thresholds = []
+
+    for dim in range(d):
+        x = np.random.uniform(1.0, 2.0, size=n_points_per_dim)
+        y = np.random.uniform(-1.0, 1.0, size=n_points_per_dim)
+        X = np.stack([x, np.ones_like(x)], axis=1)
+        beta, _, _, _ = np.linalg.lstsq(X, y, rcond=1e-8)
+        intercept = beta[1]
+        diff = X @ beta - y
+        thresholds.append(0.5*np.mean(diff**2))
+        y -= intercept
+        x_train[dim*n_points_per_dim:(dim+1)*n_points_per_dim, dim] = torch.as_tensor(x)
+        y_train[dim*n_points_per_dim:(dim+1)*n_points_per_dim] = torch.as_tensor(y)
+
+    return x_train, y_train, np.mean(thresholds)
+
+
+
+def test_performance(n_hidden=256, ds_type='2d_star_11', n_parallel=1000, n_epochs=1000000,
+                     random_bias=False, act='relu', n_layers=1, device_number=0, version=0):
     print('Start time:', datetime.datetime.now())
 
     if n_layers > 1:
         name = f'{n_hidden}x{n_layers}-{n_parallel}-{random_bias}-{act}-v{version}'
+        #name = f'{n_hidden}x{n_layers}-{ds_type}-{lr_factor}-{random_bias}-{act}-v{version}'
     else:
         name = f'{n_hidden}-{n_parallel}-{random_bias}-{act}-v{version}'
-
-    x_train, y_train = get_2d_star_dataset(k=11, dist=0.1)
+        #name = f'{n_hidden}-{ds_type}-{lr_factor}-{random_bias}-{act}-v{version}'
+    if ds_type == 'double_cross':
+        x_train, y_train = get_double_cross_dataset()
+    elif ds_type == 'cross':
+        x_train, y_train = get_cross_dataset()
+    elif ds_type == 'random_with_line':
+        x_train, y_train = get_random_with_line_ds()
+    elif ds_type.startswith('multi_axis'):
+        d = int(ds_type[ds_type.rfind('_')+1:])
+        x_train, y_train, threshold = get_multi_axis_ds(d)
+    elif ds_type == '2d_star_11':
+        x_train, y_train = get_2d_star_dataset(k=11, dist=0.1)
+    elif ds_type == '2d_star_7':
+        x_train, y_train = get_2d_star_dataset(k=7, dist=0.1)
+    else:
+        x_train, y_train = get_standard_dataset()
 
     print(f'Running model for {n_epochs} epochs on dataset {ds_type}: {name}')
     base_dir = Path(get_results_path())
@@ -284,34 +408,66 @@ def run_training(n_hidden=256, ds_type='2d_star_11', n_parallel=1000, n_epochs=1
     else:
         print('Creating new model')
         mt = ModelTrainer(x_train, y_train, n_parallel=n_parallel,
-                          hidden_sizes=[n_hidden] * n_layers, n_virtual_samples=n_hidden**2,
-                          random_bias=random_bias, act=act, device_number=device_number, version=version)
+                           hidden_sizes=[n_hidden] * n_layers, n_virtual_samples=n_hidden**2,
+                           random_bias=random_bias, act=act, device_number=device_number, version=version)
     mt.train(n_epochs)
     mt.to('cpu')
     utils.serialize(file_path, mt)
     utils.serialize(file_dir/'config.p', dict(ds_type=ds_type, n_parallel=n_parallel, n_layers=n_layers,
-                                              random_bias=random_bias, act=act, n_epochs=n_epochs, version=version))
+                                              random_bias=random_bias, act=act, n_epochs=n_epochs, version=version,
+                                              n_hidden=n_hidden))
+    # todo: maybe save a config file that would make it easier to read off the desired quantities?
     print('Saved trained model')
     print('End time:', datetime.datetime.now())
 
 
-def run_experiments():
+def run_experiments_1():
     n_hidden_list = [2**k for k in range(7, 13)]
     for mult in range(1, 11):
         n_epochs = mult * 100000
         for n_hidden in n_hidden_list:
-            run_training(n_hidden=n_hidden, ds_type='2d_star_11', n_parallel=1000, n_epochs=n_epochs,
-                         device_number=0)
+            test_performance(n_hidden=n_hidden, ds_type='2d_star_11', n_parallel=1000, n_epochs=n_epochs,
+                             device_number=0)
+
+def run_experiments_2():
+    for mult in range(1, 11):
+        n_epochs = mult * 100000
         for version in [0, 1]:
-            # for n_hidden=8192, only use 500 parallel at a time to avoid memory overflow on GPU
-            run_training(n_hidden=8192, ds_type='2d_star_11', n_parallel=500, n_epochs=n_epochs,
-                         device_number=0, version=version)
+            # running n_parallel=1000 leads to memory overflow on an 8GB GPU,
+            # therefore we run two versions with 500 parallel each
+            test_performance(n_hidden=8192, ds_type='2d_star_11', n_parallel=500, n_epochs=n_epochs,
+                             device_number=1, version=version)
+
+
+def run_experiments_3():
+    n_hidden_list = [2**k for k in range(4, 9)]
+    for mult in range(1, 11):
+        n_epochs = mult * 10000
+        for n_hidden in n_hidden_list:
+            test_performance(n_hidden=n_hidden, ds_type='default', n_parallel=1000,
+                             n_epochs=n_epochs, device_number=0, version=0, n_layers=3)
 
 
 def get_results_path():
-    return Path('star_dataset_results')
+    return Path(custom_paths.get_results_path())
 
 
 if __name__ == '__main__':
-    run_experiments()
+    #train()
+    #threshold = 2
+    #x_train, y_train = get_cross_dataset()
+    #x_train, y_train = get_standard_dataset()
+    #x_train, y_train = get_random_with_line_ds()
+    #x_train, y_train = get_double_cross_dataset()
+    # x_train, y_train, threshold = get_multi_axis_ds(d=5)
+    # print('threshold:', threshold)
+    # import matplotlib.pyplot as plt
+    # # plt.plot(x_train[:, -1], y_train, '.')
+    # x_train, y_train = get_2d_star_dataset(k=7, dist=0.1)
+    # plt.plot(x_train[:, 0], x_train[:, 1], '.')
+    # plt.show()
+    # train_models('256', x_train, y_train, n_parallel=100, n_epochs=1000000, hidden_sizes=[256], lr=0.1/256,
+    #              random_bias=False, threshold=threshold-0.0001)
+    # fire.Fire(test_performance)
+    run_experiments_1()
 

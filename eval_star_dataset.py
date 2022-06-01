@@ -22,10 +22,11 @@ def print_aggregate_results(ds_type):
     mt_results = []
     for path in base_path.iterdir():
         mt_path = path / 'model_trainer.p'
-        if not utils.existsFile(mt_path):
+        config_path = path / 'config.p'
+        if not utils.existsFile(mt_path) or not utils.existsFile(config_path):
             continue
         mt = utils.deserialize(mt_path)
-        config = utils.deserialize(path / 'config.p')
+        config = utils.deserialize(config_path)
         configs.append(config)
         mt_results.append(dict(kink_fraction=(mt.kink_first_crossed != -1).float().mean().item(),
                                mse_fraction=(mt.mse_first_crossed != -1).float().mean().item()))
@@ -45,4 +46,4 @@ def print_aggregate_results(ds_type):
 
 
 if __name__ == '__main__':
-    pass
+    print_aggregate_results('2d_star_11')
