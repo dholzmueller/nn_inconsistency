@@ -1,4 +1,4 @@
-# Copyright 2019 The nn_inconsistency Authors. All Rights Reserved.
+# Copyright 2022 The nn_inconsistency Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 
 from enum import Enum
 import numpy as np
@@ -43,7 +42,7 @@ def get_standard_dataset():
 
 # contains temporary variables for training that should not be saved
 class TrainingVariables(object):
-    def __init__(self, num_parallel, num_hidden, x, y, x_weights, lrs):
+    def __init__(self, num_parallel, num_hidden, x, y, x_weights, lrs, use_adam=False):
         self.num_parallel = num_parallel
         self.batch_size = len(x)
         self.num_hidden = num_hidden
@@ -65,6 +64,23 @@ class TrainingVariables(object):
         self.Y = expand(y, [0, 2])
         self.X_weights = np.expand_dims(x_weights, axis=2)
         self.neg_lrs = -expand(lrs, [1, 2])
+        self.use_adam = use_adam
+
+        if use_adam:
+            self.beta_1 = 0.9
+            self.beta_2 = 0.999
+            self.eps = 1e-8
+            self.beta_1_power = 1.0
+            self.beta_2_power = 1.0
+            self.grad_acc_a = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+            self.grad_acc_b = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+            self.grad_acc_c = np.zeros(shape=(self.num_parallel, 1, 1))
+            self.grad_acc_w = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+            self.sq_grad_acc_a = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+            self.sq_grad_acc_b = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+            self.sq_grad_acc_c = np.zeros(shape=(self.num_parallel, 1, 1))
+            self.sq_grad_acc_w = np.zeros(shape=(self.num_parallel, 1, self.num_hidden))
+
 
 # stops all neural nets where a kink has potentially crossed a datapoint, i.e. |x_{kink}| >= min_j |x_j|
 # where x_j are the datapoints
@@ -172,10 +188,11 @@ class CheckingNN(object):
         self.min_abs_x = np.min(np.abs(self.x))
         self.val_x_weights = val_x_weights  # validation weights (for the x and y values above)
 
-    def create_training_vars(self):
+    def create_training_vars(self, use_adam=False):
         # creates an intermediate object which contains temporary variables
         # these are in a different class so that they are not saved when an object of CheckingNN is serialized
-        return TrainingVariables(self.get_num_unfinished(), self.num_hidden, self.x, self.y, self.x_weights[self.orig_indices], self.lrs[self.orig_indices])
+        return TrainingVariables(self.get_num_unfinished(), self.num_hidden, self.x, self.y,
+                                 self.x_weights[self.orig_indices], self.lrs[self.orig_indices], use_adam=use_adam)
 
     # trains for one epoch using gradient descent (no minibatching)
     def train_one_epoch(self, vars : TrainingVariables):
@@ -206,6 +223,63 @@ class CheckingNN(object):
         np.multiply(vars.f_minus_y_times_lr, vars.relu_result, out=vars.fmy_lr_w)
         np.sum(vars.fmy_lr_w, axis=1, keepdims=True, out=vars.step)
         self.w += vars.step
+
+        self.max_kink_movement[self.orig_indices] = np.maximum(self.max_kink_movement[self.orig_indices],
+                                                               np.max(np.abs(self.b / self.a), axis=2).flatten())
+
+        self.iteration_count += 1
+
+    def adam_step(self, vars : TrainingVariables):
+        vars.beta_1_power *= vars.beta_1
+        vars.beta_2_power *= vars.beta_2
+
+        np.multiply(self.a, vars.X, out=vars.relu_result)
+        vars.relu_result += self.b
+        np.less(vars.relu_result, 0, out=vars.inactive)
+        vars.relu_result[vars.inactive] = 0
+        np.multiply(self.w, vars.relu_result, out=vars.wr)
+        np.sum(vars.wr, axis=2, keepdims=True, out=vars.f_minus_y_times_lr)
+        vars.f_minus_y_times_lr += self.c
+        vars.f_minus_y_times_lr -= vars.Y
+
+        vars.f_minus_y_times_lr *= vars.X_weights  # allows different weighting for the different dataset samples
+        #vars.f_minus_y_times_lr *= vars.neg_lrs  # lr should be a vector of learning rates for each parallel instance
+
+        np.sum(vars.f_minus_y_times_lr, axis=1, keepdims=True, out=vars.step_c)
+        vars.sq_grad_acc_c *= vars.beta_2
+        vars.sq_grad_acc_c += (1-vars.beta_2) * vars.step_c**2
+        vars.grad_acc_c *= vars.beta_1
+        vars.grad_acc_c += (1 - vars.beta_1) * vars.step_c
+        self.c += vars.neg_lrs * (vars.grad_acc_c / (1.0 - vars.beta_1_power)) \
+                  / (np.sqrt(vars.sq_grad_acc_c / (1.0 - vars.beta_2_power)) + vars.eps)
+
+        np.multiply(vars.f_minus_y_times_lr, self.w, out=vars.fmy_lr_w)
+        vars.fmy_lr_w[vars.inactive] = 0
+        np.sum(vars.fmy_lr_w, axis=1, keepdims=True, out=vars.step)
+        vars.sq_grad_acc_b *= vars.beta_2
+        vars.sq_grad_acc_b += (1 - vars.beta_2) * vars.step ** 2
+        vars.grad_acc_b *= vars.beta_1
+        vars.grad_acc_b += (1 - vars.beta_1) * vars.step
+        self.b += vars.neg_lrs * (vars.grad_acc_b / (1.0 - vars.beta_1_power)) \
+                  / (np.sqrt(vars.sq_grad_acc_b / (1.0 - vars.beta_2_power)) + vars.eps)
+
+        np.multiply(vars.fmy_lr_w, vars.X, out=vars.fmy_lr_w)
+        np.sum(vars.fmy_lr_w, axis=1, keepdims=True, out=vars.step)
+        vars.sq_grad_acc_a *= vars.beta_2
+        vars.sq_grad_acc_a += (1 - vars.beta_2) * vars.step ** 2
+        vars.grad_acc_a *= vars.beta_1
+        vars.grad_acc_a += (1 - vars.beta_1) * vars.step
+        self.a += vars.neg_lrs * (vars.grad_acc_a / (1.0 - vars.beta_1_power)) \
+                  / (np.sqrt(vars.sq_grad_acc_a / (1.0 - vars.beta_2_power)) + vars.eps)
+
+        np.multiply(vars.f_minus_y_times_lr, vars.relu_result, out=vars.fmy_lr_w)
+        np.sum(vars.fmy_lr_w, axis=1, keepdims=True, out=vars.step)
+        vars.sq_grad_acc_w *= vars.beta_2
+        vars.sq_grad_acc_w += (1 - vars.beta_2) * vars.step ** 2
+        vars.grad_acc_w *= vars.beta_1
+        vars.grad_acc_w += (1 - vars.beta_1) * vars.step
+        self.w += vars.neg_lrs * (vars.grad_acc_w / (1.0 - vars.beta_1_power)) \
+                  / (np.sqrt(vars.sq_grad_acc_w / (1.0 - vars.beta_2_power)) + vars.eps)
 
         self.max_kink_movement[self.orig_indices] = np.maximum(self.max_kink_movement[self.orig_indices],
                                                                np.max(np.abs(self.b / self.a), axis=2).flatten())
@@ -261,6 +335,18 @@ class CheckingNN(object):
         vars.fmy_lr_w = vars.fmy_lr_w[unfinished_indices, :, :]
         vars.wait_times = vars.wait_times[unfinished_indices]
         vars.best_validation_losses = vars.best_validation_losses[unfinished_indices]
+
+        if vars.use_adam:
+            vars.sq_grad_acc_a = vars.sq_grad_acc_a[unfinished_indices, :, :]
+            vars.sq_grad_acc_b = vars.sq_grad_acc_b[unfinished_indices, :, :]
+            vars.sq_grad_acc_c = vars.sq_grad_acc_c[unfinished_indices, :, :]
+            vars.sq_grad_acc_w = vars.sq_grad_acc_w[unfinished_indices, :, :]
+
+            vars.grad_acc_a = vars.grad_acc_a[unfinished_indices, :, :]
+            vars.grad_acc_b = vars.grad_acc_b[unfinished_indices, :, :]
+            vars.grad_acc_c = vars.grad_acc_c[unfinished_indices, :, :]
+            vars.grad_acc_w = vars.grad_acc_w[unfinished_indices, :, :]
+
         self.orig_indices = self.orig_indices[unfinished_indices]
 
     # computes validation losses for each network
@@ -269,19 +355,23 @@ class CheckingNN(object):
         errors = expand(self.y, [0]) - pred
         return np.sum(errors * errors * self.val_x_weights[self.orig_indices], axis=1)
 
-    def train(self, stopping_criteria, max_num_checks, num_minibatches_per_check, minibatch_size=None, verbose=True):
+    def train(self, stopping_criteria, max_num_checks, num_minibatches_per_check, minibatch_size=None, verbose=True, use_adam=False):
         # If minibatch_size is None, non-stochastic gradient descent is used.
         # For stochastic gradient descent,
         # minibatches are subsampled independently from the data and not cycled through the data.
 
-        vars = self.create_training_vars()
+        vars = self.create_training_vars(use_adam=use_adam)
 
         for check_count in range(max_num_checks):
             if minibatch_size is None:
                 for i in range(num_minibatches_per_check):
                     if verbose and ((num_minibatches_per_check < 10) or (i % (num_minibatches_per_check // 10) == 0)):
                         print('.', end='', flush=True)
-                    self.train_one_epoch(vars)
+
+                    if use_adam:
+                        self.adam_step(vars)
+                    else:
+                        self.train_one_epoch(vars)
             else:
                 relevant_x_weights = self.x_weights[self.orig_indices, :]
                 stochastic_X_weights = np.asarray([np.random.multinomial(minibatch_size, relevant_x_weights[i, :], num_minibatches_per_check) / minibatch_size
@@ -290,7 +380,11 @@ class CheckingNN(object):
                     vars.X_weights = np.expand_dims(stochastic_X_weights[:, i, :], axis=2)
                     if verbose and ((num_minibatches_per_check < 10) or (i % (num_minibatches_per_check // 10) == 0)):
                         print('.', end='', flush=True)
-                    self.train_one_epoch(vars)
+
+                    if use_adam:
+                        self.adam_step(vars)
+                    else:
+                        self.train_one_epoch(vars)
 
             for stopping_criterion in stopping_criteria:
                 stopping_criterion.check(self, vars)
@@ -299,8 +393,7 @@ class CheckingNN(object):
 
             self.check_count += 1
 
-            print(
-                    'Check {} [{} unfinished, {} crossed, {} early stopped, {} locally converged, {} a-degenerate, {} x-degenerate] for n_hidden={}'.format(
+            print('Check {} [{} unfinished, {} crossed, {} early stopped, {} locally converged, {} a-degenerate, {} x-degenerate] for n_hidden={}'.format(
                         self.check_count, self.get_num_unfinished(), self.get_num_crossed(), self.get_num_early_stopped(),
                         self.get_num_locally_converged(), self.get_num_a_degenerate(), self.get_num_x_degenerate(),
                         self.num_hidden))
@@ -345,7 +438,7 @@ class CheckingNN(object):
             pred = np.sum(self.w * relu_result, axis=2, keepdims=True) + self.c
             return pred[:, :, 0]
         else:
-            X = expand(x, [2])
+            X = expand(x, [1])
             a = self.a[instance, :, :]
             b = self.b[instance, :, :]
             c = self.c[instance, :, :]
@@ -432,7 +525,7 @@ def get_param_combinations():
     return param_combinations
 
 
-def mc_runner(config, offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom):
+def mc_runner(config, offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom, use_adam):
     # method that can be run for a MCConfiguration object to do the computations and save them to a folder
     start_time = time.time()
     np.random.seed(config.seed)
@@ -452,14 +545,16 @@ def mc_runner(config, offset_str, base_dir, use_sgd, use_early_stopping, use_suf
     net = CheckingNN((a, b, c, w), train_setups, lrs, val_x_weights=val_x_weights)
     max_num_checks = 10000 if initialize_custom else 1000
     num_minibatches_per_check = 100 if initialize_custom else 1000
-    minibatch_size = 16 if use_sgd else None  # non-stochastic gradient descent
+    minibatch_size = 16 if (use_sgd or use_adam) else None  # non-stochastic gradient descent
     stopping_criteria = [CrossingStoppingCriterion()]
     if use_early_stopping:
         stopping_criteria.append(EarlyStoppingCriterion(min_delta=1e-8, patience=10))
     if use_sufficient_stopping:
         stopping_criteria.append(SufficientStoppingCriterion())
 
-    net.train(stopping_criteria=stopping_criteria, max_num_checks=max_num_checks, num_minibatches_per_check=num_minibatches_per_check, minibatch_size=minibatch_size, verbose=False)
+    net.train(stopping_criteria=stopping_criteria, max_num_checks=max_num_checks,
+              num_minibatches_per_check=num_minibatches_per_check, minibatch_size=minibatch_size, verbose=False,
+              use_adam=use_adam)
 
     target_folder = base_dir + 'mc-data-{}/hidden-{}_parallel-{}_id-{}_time-{}/'.format(offset_str, config.n_hidden, config.n_parallel, config.index, int(start_time*1000))
     utils.serialize(target_folder+'net.p', net)
@@ -468,7 +563,7 @@ def mc_runner(config, offset_str, base_dir, use_sgd, use_early_stopping, use_suf
 
 class OffsetMCRunner(object):
     # Class that saves some more parameters for mc_runner
-    def __init__(self, offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom):
+    def __init__(self, offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom, use_adam):
         self.offset_str = offset_str
         self.use_sgd = use_sgd
         self.base_dir = base_dir
@@ -476,18 +571,20 @@ class OffsetMCRunner(object):
         self.use_sufficient_stopping = use_sufficient_stopping
         self.use_small_lr = use_small_lr
         self.initialize_custom = initialize_custom
+        self.use_adam = use_adam
 
     def __call__(self, config):
-        mc_runner(config, self.offset_str, self.base_dir, self.use_sgd, self.use_early_stopping, self.use_sufficient_stopping, self.use_small_lr, self.initialize_custom)
+        mc_runner(config, self.offset_str, self.base_dir, self.use_sgd, self.use_early_stopping, self.use_sufficient_stopping, self.use_small_lr, self.initialize_custom, self.use_adam)
 
 
-def execute_mc(offset_str, base_dir='./mc-data/', use_sgd=False, use_early_stopping=False, use_sufficient_stopping=True, use_small_lr=False, initialize_custom=False):
+def execute_mc(offset_str, base_dir='./mc-data/', use_sgd=False, use_early_stopping=False, use_sufficient_stopping=True,
+               use_small_lr=False, initialize_custom=False, use_adam=False):
     # creates a thread pool and runs all computation tasks
     param_combinations = get_param_combinations()
     num_processes = max(1, multiprocessing.cpu_count()//2)
     pool = multiprocessing.Pool(processes=num_processes)
     utils.ensureDir(base_dir + 'mc-data-{}/'.format(offset_str))
-    pool.map(OffsetMCRunner(offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom), param_combinations, chunksize=1)
+    pool.map(OffsetMCRunner(offset_str, base_dir, use_sgd, use_early_stopping, use_sufficient_stopping, use_small_lr, initialize_custom, use_adam), param_combinations, chunksize=1)
     pool.terminate()
     pool.join()
 
@@ -502,10 +599,11 @@ if __name__ == '__main__':
     use_sufficient_stopping = True
     use_small_lr = False  # if true, use 0.01*n^{-1} instead of \lambda_{max}(A^{ref} M)^{-1}
     initialize_custom = False  # if true, swap the variances of a and w initialization
+    use_adam = False
 
     for offset_str in ['0', '0.01', '0.1']:
         execute_mc(offset_str, base_dir=base_dir, use_sgd=use_sgd, use_early_stopping=use_early_stopping,
-                   use_sufficient_stopping=use_sufficient_stopping, use_small_lr=use_small_lr, initialize_custom=initialize_custom)
+                   use_sufficient_stopping=use_sufficient_stopping, use_small_lr=use_small_lr, initialize_custom=initialize_custom, use_adam=use_adam)
 
 
     # this can be used to run a single task for quick experiments

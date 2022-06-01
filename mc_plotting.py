@@ -18,7 +18,7 @@ import numpy as np
 import utils
 from collections import defaultdict
 from mc_training import CheckingNN, TrainingStatus, MCConfiguration  # need this for deserialize
-from mc_sgd_keras import MCResult
+
 
 # find subfolders of a data folder where identical experiments with different timestamps are deduplicated
 # (only the one with the newest timestamp) is used
@@ -48,6 +48,7 @@ def load_data(folder, from_keras=False):
         for subfolder in subfolders:
             try:
                 if from_keras:
+                    from mc_sgd_keras import MCResult  # need this for deserialize
                     data_list.append((utils.deserialize(subfolder + '/result.p'), utils.deserialize(subfolder + '/config.p')))
                 else:
                     data_list.append((utils.deserialize(subfolder + '/net.p'), utils.deserialize(subfolder + '/config.p')))
