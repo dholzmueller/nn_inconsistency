@@ -1,5 +1,6 @@
 # Training Two-Layer ReLU Networks with Gradient Descent is Inconsistent
 [![Identifier]( https://img.shields.io/badge/doi-10.18419%2Fdarus--2978-d45815.svg)]
+
 *Update (2021)*: We have added code for evaluations of different training configurations (optimizer, init, parameterization) on various data sets of various dimensions for an upcoming version of our paper.
 
 *Update (2020)*: We have added code for an evaluation on another star-like dataset (or rather its corresponding distribution) for a new version of our paper.
