@@ -1,7 +1,7 @@
 # Training Two-Layer ReLU Networks with Gradient Descent is Inconsistent
 *Update (2021)*: We have added code for evaluations of different training configurations (optimizer, init, parameterization) on various data sets of various dimensions for an upcoming version of our paper.
 
-*Update*: We have added code for an evaluation on another star-like dataset (or rather its corresponding distribution) for a new version of our paper.
+*Update (2020)*: We have added code for an evaluation on another star-like dataset (or rather its corresponding distribution) for a new version of our paper.
 
 This code can be used to reproduce figures from our paper ["Training Two-Layer ReLU Networks with Gradient Descent is Inconsistent"](https://arxiv.org/abs/2002.04861), building on my master's thesis ["Convergence Analysis of Neural Networks"](https://elib.uni-stuttgart.de/handle/11682/10729?locale=en). It is licensed under the Apache 2.0 license.
 It mainly requires numpy, scipy and matplotlib, the newer code involving higher-dimensional data sets requires PyTorch and one of the plots can be compared against a (slower) keras implementation. The older code for computations on 1D data uses CPU computations only and is parallelized so that it can be used efficiently on a many-core shared-RAM system (although distributing it across multiple machines should not be too hard).
